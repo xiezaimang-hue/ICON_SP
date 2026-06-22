@@ -6,7 +6,7 @@
 =========================================================
 适用场景：
   你已经在外部用 AI（例如 Nanobanana / Gemini Image）生成了
-  3 张 4×4 大图（共 48 个图标），需要：
+  一张或多张 4×4 大图，需要：
     - 自动去除图标下方的英文/中文标签文字
     - 按图标外形抠图（白底变透明）
     - 按你提供的 POI 名称命名为单独 PNG
@@ -14,11 +14,11 @@
 工作流：
   1) 把每个目的地的 3 张大图 + 1 个 pois.json 放到
      inputs/<目的地名>/ 下
-       - batch1.png / batch2.png / batch3.png
-       - pois.json   { "pois": ["POI 1", ..., "POI 48"] }
+       - batch1.png / batch2.png / ...
+       - pois.json   { "pois": ["POI 1", ...] }
        注：第 1~16 个 POI 对应 batch1.png；
            第 17~32 个对应 batch2.png；
-           第 33~48 个对应 batch3.png。
+           第 33~48 个对应 batch3.png，依此类推。
   2) 双击 run.command（或在 Terminal 跑 python3 splitter.py）。
   3) 切分结果输出到 outputs/<目的地名>/cropped/<POI>.png。
 
@@ -26,7 +26,7 @@
   Python 3.9+，自动从 requirements.txt 安装。
   首次运行 OCR 会下载约 100MB 模型到 ~/.EasyOCR/，请保持网络畅通。
 
-无需联网（除首次下载 OCR 模型外）。
+普通切图无需联网（除首次下载 OCR 模型外）。可选 --review 需要联网和已登录的 Codex CLI。
 """
 
 from __future__ import annotations
@@ -382,8 +382,8 @@ def find_batch_files(dest_dir: str) -> List[str]:
     return found
 
 
-def load_pois_json(dest_dir: str) -> List[str]:
-    """读取目的地下的 pois.json，返回扁平 POI 数组。"""
+def load_pois_json(dest_dir: str) -> List[dict]:
+    """读取 pois.json，兼容字符串和 {name, description} 两种 POI。"""
     path = os.path.join(dest_dir, "pois.json")
     if not os.path.isfile(path):
         raise FileNotFoundError(f"找不到 {path}")
@@ -394,12 +394,25 @@ def load_pois_json(dest_dir: str) -> List[str]:
     pois = data["pois"]
     if not isinstance(pois, list) or not pois:
         raise ValueError(f"{path} 中 pois 必须是非空数组")
-    if any(not isinstance(p, str) or not p.strip() for p in pois):
-        raise ValueError(f"{path} 中所有 POI 必须是非空字符串")
-    return [p.strip() for p in pois]
+    normalized = []
+    for index, poi in enumerate(pois, 1):
+        if isinstance(poi, str) and poi.strip():
+            normalized.append({"name": poi.strip(), "description": ""})
+            continue
+        if isinstance(poi, dict):
+            name = poi.get("name")
+            description = poi.get("description", "")
+            if isinstance(name, str) and name.strip() and isinstance(description, str):
+                normalized.append({"name": name.strip(), "description": description.strip()})
+                continue
+        raise ValueError(
+            f"{path} 中第 {index} 个 POI 必须是非空字符串，"
+            '或 {"name": "...", "description": "..."}'
+        )
+    return normalized
 
 
-def process_destination(dest_name: str, dest_dir: str, out_root: str) -> dict:
+def process_destination(dest_name: str, dest_dir: str, out_root: str, *, review_enabled: bool = False) -> dict:
     """处理单个目的地：扁平 POI → 按 16 切分给 batch1/2/3 → 智能切分。"""
     print(f"\n{'═' * 60}")
     print(f"  目的地: {dest_name}")
@@ -407,7 +420,7 @@ def process_destination(dest_name: str, dest_dir: str, out_root: str) -> dict:
     print(f"{'═' * 60}")
 
     try:
-        pois_all = load_pois_json(dest_dir)
+        poi_specs_all = load_pois_json(dest_dir)
     except Exception as e:
         msg = f"读取 pois.json 失败: {e}"
         print(f"  [错误] {msg}")
@@ -419,7 +432,8 @@ def process_destination(dest_name: str, dest_dir: str, out_root: str) -> dict:
         print(f"  [错误] {msg}")
         return {"success": False, "destination": dest_name, "error": msg}
 
-    n_total = len(pois_all)
+    pois_all = [p["name"] for p in poi_specs_all]
+    n_total = len(poi_specs_all)
     n_batches = len(batch_paths)
     print(f"  POI 总数: {n_total}  ·  大图张数: {n_batches}")
 
@@ -429,6 +443,7 @@ def process_destination(dest_name: str, dest_dir: str, out_root: str) -> dict:
 
     mapping_all: Dict[str, str] = {}
     batch_records = []
+    review_batches = []
 
     for i, src in enumerate(batch_paths):
         start = i * BATCH_SIZE
@@ -437,6 +452,7 @@ def process_destination(dest_name: str, dest_dir: str, out_root: str) -> dict:
             print(f"  [跳过] batch{i + 1}：POI 已用完（总 {n_total} 个）")
             continue
         batch_pois = pois_all[start:end]
+        batch_specs = poi_specs_all[start:end]
         print(f"\n  ▶ 切分 batch{i + 1}: {len(batch_pois)} 个 POI（POI {start + 1}~{end}）")
         ok, err, mapping = split_one_grid(src, batch_pois, out_dir)
         if not ok:
@@ -451,6 +467,22 @@ def process_destination(dest_name: str, dest_dir: str, out_root: str) -> dict:
             "count": len(mapping),
         })
 
+        if review_enabled:
+            from reviewer import review_batch_with_codex
+            review_batches.append(
+                review_batch_with_codex(src, dest_name, i + 1, batch_specs)
+            )
+
+    review_payload = {"enabled": False}
+    review_job = None
+    if review_enabled:
+        from reviewer import build_ai_review, review_manifest_payload
+        review_dir = os.path.join(out_root, dest_name, "review")
+        ai_report = build_ai_review(dest_name, review_batches, review_dir)
+        ai_path = os.path.join(review_dir, "ai_review.json")
+        manual_path = os.path.join(review_dir, "manual_review.json")
+        review_payload = review_manifest_payload(ai_report, ai_path, manual_path)
+
     # 落库 manifest 方便后续核对
     manifest_path = os.path.join(out_root, dest_name, "manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -461,7 +493,15 @@ def process_destination(dest_name: str, dest_dir: str, out_root: str) -> dict:
             "out_dir": os.path.abspath(out_dir),
             "batches": batch_records,
             "mapping": mapping_all,
+            "review": review_payload,
         }, f, ensure_ascii=False, indent=2)
+
+    if review_enabled:
+        review_job = {
+            "ai_report": ai_report,
+            "manual_path": manual_path,
+            "manifest_path": manifest_path,
+        }
 
     print(f"\n  ✅ {dest_name}: 共切分 {len(mapping_all)} 个图标")
     print(f"  📁 输出: {out_dir}")
@@ -473,6 +513,7 @@ def process_destination(dest_name: str, dest_dir: str, out_root: str) -> dict:
         "out_dir": os.path.abspath(out_dir),
         "mapping": mapping_all,
         "manifest": manifest_path,
+        "review_job": review_job,
     }
 
 
@@ -503,12 +544,27 @@ def main():
   python3 splitter.py Bangkok            # 只处理 Bangkok
   python3 splitter.py Bangkok Tokyo      # 处理多个
   python3 splitter.py --no-ocr           # 不去文字（速度快）
+  python3 splitter.py Bangkok --review   # 切图后启用 AI 整图初审
 """,
     )
     parser.add_argument("destinations", nargs="*",
                         help="要处理的目的地（不填 = 处理 inputs/ 下所有）")
     parser.add_argument("--no-ocr", action="store_true", help="禁用 OCR 文字去除")
+    parser.add_argument("--review", action="store_true",
+                        help="启用可选 AI 整图初审（会使用当前 Codex Plus 额度）")
+    parser.add_argument("--interactive-review", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--review-timeout", type=int, default=1800,
+                        help="人工复审网页最长等待秒数（默认 1800）")
+    parser.add_argument("--no-open-review", action="store_true",
+                        help="不自动打开人工复审浏览器（仍会打印本地网址）")
     args = parser.parse_args()
+
+    if args.interactive_review and not args.review:
+        try:
+            answer = input("\n是否启用 AI 图片审核？会使用 Codex Plus 额度 [y/N]: ").strip().lower()
+            args.review = answer in ("y", "yes", "1", "是")
+        except (EOFError, KeyboardInterrupt):
+            args.review = False
 
     global REMOVE_TEXT
     if args.no_ocr:
@@ -516,6 +572,7 @@ def main():
         print("[配置] OCR 文字去除：已关闭")
     else:
         print("[配置] OCR 文字去除：已开启（依赖 easyocr）")
+    print(f"[配置] AI 图片审核：{'已开启' if args.review else '已关闭'}")
 
     # 确定要处理的目的地
     if args.destinations:
@@ -538,7 +595,17 @@ def main():
 
     results = []
     for name, dest_dir in targets:
-        results.append(process_destination(name, dest_dir, OUTPUTS_DIR))
+        results.append(process_destination(name, dest_dir, OUTPUTS_DIR, review_enabled=args.review))
+
+    if args.review:
+        review_jobs = [r["review_job"] for r in results if r.get("review_job")]
+        if review_jobs:
+            from reviewer import serve_manual_review
+            serve_manual_review(
+                review_jobs,
+                timeout=max(1, args.review_timeout),
+                open_browser=not args.no_open_review,
+            )
 
     # 汇总
     print(f"\n{'━' * 60}")

@@ -12,3 +12,6 @@ __pycache__/
 icon_splitter 2/inputs/
 icon_splitter 2/outputs/
 
+# macOS desktop app build artifacts
+icon_splitter 2/build/
+icon_splitter 2/dist/

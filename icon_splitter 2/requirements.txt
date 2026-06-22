@@ -3,6 +3,7 @@ numpy>=1.21
 Pillow>=9.0
 scipy>=1.7
 opencv-python>=4.5
+openpyxl>=3.1
 
 # OCR 文字去除（首次会下载约 100MB 模型）
 # 如果安装失败，可暂时注释这一行，并加 --no-ocr 参数运行
