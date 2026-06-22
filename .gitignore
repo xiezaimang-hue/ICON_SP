@@ -1,0 +1,14 @@
+.DS_Store
+**/.DS_Store
+
+# Python environments and caches
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Local image jobs and generated crops
+icon_splitter 2/inputs/
+icon_splitter 2/outputs/
+
