@@ -383,7 +383,7 @@ def find_batch_files(dest_dir: str) -> List[str]:
 
 
 def load_pois_json(dest_dir: str) -> List[dict]:
-    """读取 pois.json，兼容字符串和 {name, description} 两种 POI。"""
+    """读取 pois.json，兼容字符串及带中英文名称、描述的 POI 对象。"""
     path = os.path.join(dest_dir, "pois.json")
     if not os.path.isfile(path):
         raise FileNotFoundError(f"找不到 {path}")
@@ -397,17 +397,25 @@ def load_pois_json(dest_dir: str) -> List[dict]:
     normalized = []
     for index, poi in enumerate(pois, 1):
         if isinstance(poi, str) and poi.strip():
-            normalized.append({"name": poi.strip(), "description": ""})
+            normalized.append({"name": poi.strip(), "name_zh": "", "description": ""})
             continue
         if isinstance(poi, dict):
             name = poi.get("name")
+            name_zh = poi.get("name_zh", "")
             description = poi.get("description", "")
-            if isinstance(name, str) and name.strip() and isinstance(description, str):
-                normalized.append({"name": name.strip(), "description": description.strip()})
+            if (
+                isinstance(name, str) and name.strip()
+                and isinstance(name_zh, str) and isinstance(description, str)
+            ):
+                normalized.append({
+                    "name": name.strip(),
+                    "name_zh": name_zh.strip(),
+                    "description": description.strip(),
+                })
                 continue
         raise ValueError(
             f"{path} 中第 {index} 个 POI 必须是非空字符串，"
-            '或 {"name": "...", "description": "..."}'
+            '或 {"name": "...", "name_zh": "...", "description": "..."}'
         )
     return normalized
 

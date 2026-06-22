@@ -27,7 +27,10 @@ class PoiInputTests(unittest.TestCase):
                 ]
             }), encoding="utf-8")
             specs = splitter.load_pois_json(temp_dir)
-        self.assertEqual(specs[0], {"name": "Namsan Seoul Tower", "description": ""})
+        self.assertEqual(
+            specs[0],
+            {"name": "Namsan Seoul Tower", "name_zh": "", "description": ""},
+        )
         self.assertEqual(specs[1]["description"], "Youth district with street art")
 
     def test_rejects_invalid_poi_objects(self):

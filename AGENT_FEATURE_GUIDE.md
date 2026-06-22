@@ -2,6 +2,8 @@
 
 > 本文面向后续接手本项目的 Agent/工程师。它是当前功能、数据契约、默认行为和已知边界的汇总。修改代码前应先阅读本文，再阅读对应模块和测试。
 
+表格中的可选 `中文 / 中文名 / name_zh` 列会作为 `name_zh` 贯通到 `pois.json`、`project.json` 和人工评估界面。每个PAGE的复制按钮位于该PAGE标题栏，按钮文字包含PAGE编号。
+
 ## 1. 产品目标
 
 本项目将城市 POI 表格与外部生成的4×4图标网格图转换为可交付的单体透明PNG，并提供可选AI初审和完整人工评估闭环。
@@ -11,10 +13,11 @@
 1. 从本地表格、CSV或可公开导出的在线表格提取城市与POI。
 2. 按每16个POI生成一页图像Prompt；不能被16整除的POI单独形成尾页，不补占位内容。
 3. 在外部图像模型中生成4×4网格图。
-4. 在macOS图形工作台中手动上传表格和网格图，或直接放入 `inputs/`。
-5. 可选OCR去文字、自动切图、去白底、透明化、按POI命名并缩放到长边不超过100px。
-6. 可选使用当前已登录的Codex CLI做整图AI初审。
-7. 在图形工作台中评估全部成品，记录通过、驳回、重做或待定。
+4. 在macOS图形工作台中一次导入整张总表，自动建立全部城市和分页Prompt。
+5. 用户复制某城市某PAGE Prompt到外部生图网页，生成后回到该城市逐张回填batch图片。
+6. 当前城市所有PAGE图片齐全后，可选OCR并自动切图、去白底、透明化、命名和缩放。
+7. 可选使用当前已登录的Codex CLI做整图AI初审。
+8. 在图形工作台中评估全部成品，记录通过、驳回、重做或待定。
 
 ## 2. 代码与职责
 
@@ -39,7 +42,10 @@
 - `reviewer.py`
   - 可选Codex整图审核、审核结果标准化、异常格高清裁片、人工评估状态和旧版独立复审页。
 - `sheet_importer.py`
-  - GUI上传表格的解析器，支持XLSX/CSV、列名检测、城市匹配、顺序排序。
+  - GUI上传表格的解析器，支持XLSX/CSV、整表多城市、列名检测、视觉描述和顺序排序。
+- `prompt_generator.py`
+  - 按每16个POI生成可直接复制到外部生图软件的PAGE Prompt。
+  - 没有视觉描述时使用本地通用描述，不调用Codex。
 - `web_app.py`
   - 当前macOS图形工作台和localhost HTTP API。
   - 负责城市扫描、上传、后台切图、日志、全部成品人工评估和文件预览。
@@ -64,6 +70,10 @@ icon_splitter 2/
 │       ├── batch2.png
 │       ├── ...
 │       ├── source_table.xlsx     # 通过GUI上传时保留原表，可为CSV
+│       ├── project.json           # 城市、PAGE、POI范围与Prompt路径
+│       ├── prompts/
+│       │   ├── page_01.txt
+│       │   └── ...
 │       └── pois.json
 └── outputs/
     └── <城市>/
@@ -106,7 +116,7 @@ icon_splitter 2/
 
 字符串和对象可以混用。`name`必须为非空字符串，`description`必须为字符串。
 
-### GUI表格上传
+### GUI整表导入
 
 支持 `.xlsx` 和 `.csv`。
 
@@ -138,16 +148,27 @@ POI列候选：
 - `排序`
 - `position`
 
-行为：
+主流程行为：
 
-- XLSX会在前30行中查找表头，并遍历工作表直到找到有效数据。
+- 用户只上传一次POI总表，不需要同时上传图片或逐个填写城市。
+- 应用读取表格中的全部城市并为每个城市创建项目目录。
+- 每16个POI生成一个PAGE Prompt；尾页不补假POI。
+- Prompt立即写入 `prompts/page_XX.txt`，生成过程不消耗Plus额度。
+- 可选描述列：`description / visual description / icon description / 描述 / 视觉描述 / 图标描述 / 内容描述`。
+- XLSX会在前30行中查找同时含城市和POI的表头，并遍历工作表直到找到有效数据。
 - 合并单元格导致的空城市会沿用上一行城市。
-- 城市名先精确匹配，再做包含匹配；表格只有一个城市时允许直接使用。
 - CSV依次尝试UTF-8 BOM、GB18030和UTF-16。
-- 图片按原文件名自然排序后保存为 `batch1...batchN`。
-- 必须满足 `图片数 == ceil(POI数 / 16)`。
+- 同名城市默认跳过；显式替换时先备份整个旧城市项目。
 - 上传总请求限制600MB。
-- 同名城市默认拒绝覆盖；用户勾选替换后，旧输入移动到 `inputs/_backups/<城市>_<时间>/`。
+
+### 城市图片回填
+
+- 每个PAGE对应一个batch图片槽位。
+- 文件名包含 `batchN` 或 `pageN` 时进入指定槽位。
+- 无编号文件按自然顺序进入尚未填充的槽位。
+- 支持逐张上传或一次上传多张。
+- 已有槽位默认不能覆盖；显式允许替换后，旧图移动到城市目录的 `_image_backups/`。
+- 只有全部PAGE图片就绪时，该城市才进入 `ready_to_split` 状态。
 
 ## 4. 切图行为
 
@@ -346,10 +367,13 @@ GUI使用 `scope: "all_cropped_icons"`，每个输出图标一条记录，包含
 
 - 切换/记忆workspace。
 - 扫描城市。
-- 手动上传城市、表格和图片。
-- 查看输入批次、POI数和描述数。
+- 一次导入总表并建立全部城市项目。
+- 查看城市PAGE、POI范围、描述覆盖率和即时Prompt。
+- 一键复制当前PAGE Prompt到外部生图软件。
+- 在对应城市逐张或批量回填PAGE大图。
+- 查看图片槽位和项目阶段状态。
 - 开关OCR与AI审核。
-- 运行当前城市或全部城市。
+- 图片齐全后运行当前城市，或批量运行所有就绪城市。
 - 查看实时日志。
 - 打开输出目录。
 - 查看全部切图并逐张人工评估。
@@ -363,7 +387,9 @@ GUI使用 `scope: "all_cropped_icons"`，每个输出图标一条记录，包含
 | GET | `/api/destination?name=` | 城市输入与评估数据 |
 | GET | `/asset?path=` | 读取outputs内图片 |
 | POST | `/api/workspace` | 切换workspace |
-| POST | `/api/import` | multipart上传表格与图片 |
+| POST | `/api/import-table` | multipart上传总表并建立全部城市与Prompt |
+| POST | `/api/upload-images` | multipart向指定城市回填PAGE图片 |
+| POST | `/api/import` | 旧版单城市表格+图片一次性导入兼容接口 |
 | POST | `/api/run` | 启动后台切图/审核 |
 | POST | `/api/decision` | 保存人工评估 |
 | POST | `/api/open-output` | Finder打开输出目录 |
@@ -434,8 +460,12 @@ PYTHONPYCACHEPREFIX=/private/tmp/icon-review-pycache \
 - 全部切图人工评估。
 - CSV城市前向填充与顺序列。
 - XLSX表头自动检测。
+- 整表多城市与视觉描述提取。
+- 17个POI自动生成16+1两个PAGE Prompt。
+- Prompt禁止项和尾页不补位。
 - localhost状态、城市、图片读取和路径隔离。
 - multipart表格/图片上传。
+- 城市PAGE图片逐步回填及就绪状态。
 
 由于localhost监听在受限沙箱中可能被禁止，Agent执行HTTP测试时可能需要仅针对 `127.0.0.1` 的权限提升。
 
@@ -453,6 +483,7 @@ PYTHONPYCACHEPREFIX=/private/tmp/icon-review-pycache \
 8. 上传同名城市默认不覆盖，替换前必须备份。
 9. 本地工作台只能监听 `127.0.0.1`，不得改为公网绑定。
 10. 不得把ChatGPT Plus误描述为OpenAI API额度；API Key不是当前审核流程的依赖。
+11. 表格导入和基础Prompt生成不得调用Codex；只有用户显式开启AI审核才可消耗Plus额度。
 
 ## 12. 已知限制
 
@@ -475,4 +506,3 @@ PYTHONPYCACHEPREFIX=/private/tmp/icon-review-pycache \
 5. 所有模型调用必须保持Option且默认关闭。
 6. 新增上传类型时先做扩展名、大小、目标路径和覆盖策略校验。
 7. 完成后运行全部测试，并至少验证一次AI关闭的真实切图流程。
-

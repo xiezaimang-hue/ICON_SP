@@ -56,6 +56,30 @@ class WebAppTests(unittest.TestCase):
             body = response.read()
         return json.loads(body) if "application/json" in content_type else body
 
+    def multipart(self, path, fields, files):
+        boundary = "----PoiIconStudioGenericBoundary"
+        parts = []
+        for name, value in fields.items():
+            parts.extend([
+                f"--{boundary}\r\n".encode(),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
+                str(value).encode(), b"\r\n",
+            ])
+        for name, filename, content_type, content in files:
+            parts.extend([
+                f"--{boundary}\r\n".encode(),
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode(),
+                f"Content-Type: {content_type}\r\n\r\n".encode(), content, b"\r\n",
+            ])
+        parts.append(f"--{boundary}--\r\n".encode())
+        request = urllib.request.Request(
+            self.base + path,
+            data=b"".join(parts),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return json.loads(response.read())
+
     def create_city_with_output(self):
         input_dir = self.root / "inputs" / "Seoul"
         output_dir = self.root / "outputs" / "Seoul"
@@ -64,7 +88,11 @@ class WebAppTests(unittest.TestCase):
         cropped.mkdir(parents=True)
         Image.new("RGB", (400, 400), "white").save(input_dir / "batch1.png")
         (input_dir / "pois.json").write_text(
-            json.dumps({"pois": [{"name": "Namsan Tower", "description": "White observation tower"}]}),
+            json.dumps({"pois": [{
+                "name": "Namsan Tower",
+                "name_zh": "南山首尔塔",
+                "description": "White observation tower",
+            }]}),
             encoding="utf-8",
         )
         icon = cropped / "Namsan_Tower.png"
@@ -86,6 +114,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(destination["input"]["poi_count"], 1)
         self.assertEqual(destination["input"]["described_count"], 1)
         self.assertEqual(len(destination["records"]), 1)
+        self.assertEqual(destination["records"][0]["poi_zh"], "南山首尔塔")
 
     def test_manual_decision_and_asset_are_local(self):
         icon = self.create_city_with_output()
@@ -104,8 +133,9 @@ class WebAppTests(unittest.TestCase):
         html = self.request("/").decode("utf-8")
         self.assertIn("AI 整图初审", html)
         self.assertIn("人工评估", html)
-        self.assertIn("运行当前城市", html)
-        self.assertIn("导入素材", html)
+        self.assertIn("切图当前城市", html)
+        self.assertIn("导入整张表", html)
+        self.assertIn("复制 PAGE", html)
 
     def test_multipart_import_creates_city_inputs(self):
         image_buffer = io.BytesIO()
@@ -142,6 +172,38 @@ class WebAppTests(unittest.TestCase):
         self.assertTrue((self.root / "inputs" / "Seoul" / "batch1.png").is_file())
         pois = json.loads((self.root / "inputs" / "Seoul" / "pois.json").read_text(encoding="utf-8"))
         self.assertEqual(pois["pois"], ["Namsan Tower"])
+
+    def test_full_table_creates_city_prompts_then_images_fill_page_slots(self):
+        rows = ["城市,编号,地标,中文,视觉描述"]
+        rows.extend(f"Seoul,{index},POI {index},景点 {index},Feature {index}" for index in range(1, 18))
+        rows.append("Tokyo,1,Tokyo Tower,东京塔,Red lattice tower")
+        imported = self.multipart(
+            "/api/import-table", {},
+            [("table", "all.csv", "text/csv", ("\n".join(rows) + "\n").encode())],
+        )
+        self.assertEqual(imported["city_count"], 2)
+        self.assertEqual(imported["total_pois"], 18)
+        seoul = self.request("/api/destination?name=Seoul")
+        self.assertEqual(seoul["project"]["page_count"], 2)
+        self.assertFalse(seoul["project"]["ready_to_split"])
+        self.assertIn("**POI 16**", seoul["project"]["pages"][0]["prompt_text"])
+        self.assertIn("**POI 17**", seoul["project"]["pages"][1]["prompt_text"])
+        self.assertEqual(seoul["project"]["pages"][0]["poi_specs"][0]["name_zh"], "景点 1")
+
+        image_buffer = io.BytesIO()
+        Image.new("RGB", (400, 400), "white").save(image_buffer, "PNG")
+        self.multipart(
+            "/api/upload-images", {"city": "Seoul"},
+            [("images", "page1.png", "image/png", image_buffer.getvalue())],
+        )
+        halfway = self.request("/api/destination?name=Seoul")
+        self.assertFalse(halfway["project"]["ready_to_split"])
+        self.multipart(
+            "/api/upload-images", {"city": "Seoul"},
+            [("images", "page2.png", "image/png", image_buffer.getvalue())],
+        )
+        ready = self.request("/api/destination?name=Seoul")
+        self.assertTrue(ready["project"]["ready_to_split"])
 
 
 if __name__ == "__main__":
