@@ -215,7 +215,7 @@ def review_batch_with_codex(
             _write_json(schema_path, _output_schema())
             cmd = [
                 codex, "exec", "--ephemeral", "--ignore-rules", "--skip-git-repo-check",
-                "--sandbox", "read-only", "--ask-for-approval", "never",
+                "--sandbox", "read-only",
                 "--image", os.path.abspath(source_path),
                 "--output-schema", schema_path,
                 "--output-last-message", result_path,

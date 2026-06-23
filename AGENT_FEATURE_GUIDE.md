@@ -4,6 +4,8 @@
 
 表格中的可选 `中文 / 中文名 / name_zh` 列会作为 `name_zh` 贯通到 `pois.json`、`project.json` 和人工评估界面。每个PAGE的复制按钮位于该PAGE标题栏，按钮文字包含PAGE编号。
 
+每个PAGE有两套本地确定性Prompt：原版位于 `prompts/page_XX.txt`，`Prompt_无底座` 位于 `prompts/Prompt_无底座/page_XX.txt`。项目接口以 `prompt_variants.original/no_base` 返回文本；旧项目在读取时只补生成第二版，不改写原版。
+
 ## 1. 产品目标
 
 本项目将城市 POI 表格与外部生成的4×4图标网格图转换为可交付的单体透明PNG，并提供可选AI初审和完整人工评估闭环。
@@ -18,6 +20,7 @@
 6. 当前城市所有PAGE图片齐全后，可选OCR并自动切图、去白底、透明化、命名和缩放。
 7. 可选使用当前已登录的Codex CLI做整图AI初审。
 8. 在图形工作台中评估全部成品，记录通过、驳回、重做或待定。
+9. 在单个评估详情中可一键打开当前城市与POI的 Bing 真实图片搜索，辅助人工比对。
 
 ## 2. 代码与职责
 

@@ -136,6 +136,12 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("切图当前城市", html)
         self.assertIn("导入整张表", html)
         self.assertIn("复制 PAGE", html)
+        self.assertIn("原版 Prompt", html)
+        self.assertIn("Prompt_无底座", html)
+        self.assertIn("搜索真实图片", html)
+        self.assertIn("bing.com/images/search", html)
+        self.assertIn("图片不合格", html)
+        self.assertIn("系统错误", html)
 
     def test_multipart_import_creates_city_inputs(self):
         image_buffer = io.BytesIO()
@@ -188,6 +194,11 @@ class WebAppTests(unittest.TestCase):
         self.assertFalse(seoul["project"]["ready_to_split"])
         self.assertIn("**POI 16**", seoul["project"]["pages"][0]["prompt_text"])
         self.assertIn("**POI 17**", seoul["project"]["pages"][1]["prompt_text"])
+        self.assertIn("PROMPT VERSION: Prompt_无底座", seoul["project"]["pages"][0]["prompt_no_base_text"])
+        self.assertEqual(
+            seoul["project"]["pages"][0]["prompt_variants"]["no_base"],
+            seoul["project"]["pages"][0]["prompt_no_base_text"],
+        )
         self.assertEqual(seoul["project"]["pages"][0]["poi_specs"][0]["name_zh"], "景点 1")
 
         image_buffer = io.BytesIO()

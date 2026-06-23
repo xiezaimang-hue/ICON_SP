@@ -68,8 +68,10 @@ class AiReviewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir, "batch1.png")
             Image.new("RGB", (400, 400), "white").save(source)
+            captured = {}
 
             def fake_runner(cmd, **kwargs):
+                captured["cmd"] = cmd
                 result_path = cmd[cmd.index("--output-last-message") + 1]
                 Path(result_path).write_text(json.dumps({
                     "overall_summary": "one uncertain",
@@ -88,6 +90,9 @@ class AiReviewTests(unittest.TestCase):
                 )
         self.assertEqual(result["status"], "NEEDS_REVIEW")
         self.assertEqual(len(result["items"]), 2)
+        self.assertNotIn("--ask-for-approval", captured["cmd"])
+        self.assertIn("--sandbox", captured["cmd"])
+        self.assertIn("read-only", captured["cmd"])
 
     def test_codex_failure_marks_every_item_for_review(self):
         def failed_runner(cmd, **kwargs):
