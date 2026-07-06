@@ -300,6 +300,7 @@ def split_one_grid(
     pois: List[str],
     out_dir: str,
     *,
+    max_output_size: Optional[int] = MAX_OUTPUT_SIZE,
     log: Optional[Callable[[str], None]] = None,
 ) -> Tuple[bool, str, Dict[str, str]]:
     """
@@ -350,8 +351,8 @@ def split_one_grid(
         orig_w, orig_h = cell.size
 
         # 等比缩放：max(w, h) ≤ MAX_OUTPUT_SIZE。Image.thumbnail 原地修改，自动保持比例。
-        if MAX_OUTPUT_SIZE and max(orig_w, orig_h) > MAX_OUTPUT_SIZE:
-            cell.thumbnail((MAX_OUTPUT_SIZE, MAX_OUTPUT_SIZE), Image.LANCZOS)
+        if max_output_size and max(orig_w, orig_h) > max_output_size:
+            cell.thumbnail((max_output_size, max_output_size), Image.LANCZOS)
 
         poi = pois[idx]
         fname = safe_filename(poi) + ".png"
@@ -397,25 +398,27 @@ def load_pois_json(dest_dir: str) -> List[dict]:
     normalized = []
     for index, poi in enumerate(pois, 1):
         if isinstance(poi, str) and poi.strip():
-            normalized.append({"name": poi.strip(), "name_zh": "", "description": ""})
+            normalized.append({"name": poi.strip(), "name_zh": "", "prompt_name": "", "description": ""})
             continue
         if isinstance(poi, dict):
             name = poi.get("name")
             name_zh = poi.get("name_zh", "")
+            prompt_name = poi.get("prompt_name", "")
             description = poi.get("description", "")
             if (
                 isinstance(name, str) and name.strip()
-                and isinstance(name_zh, str) and isinstance(description, str)
+                and isinstance(name_zh, str) and isinstance(prompt_name, str) and isinstance(description, str)
             ):
                 normalized.append({
                     "name": name.strip(),
                     "name_zh": name_zh.strip(),
+                    "prompt_name": prompt_name.strip(),
                     "description": description.strip(),
                 })
                 continue
         raise ValueError(
             f"{path} 中第 {index} 个 POI 必须是非空字符串，"
-            '或 {"name": "...", "name_zh": "...", "description": "..."}'
+            '或 {"name": "...", "name_zh": "...", "prompt_name": "...", "description": "..."}'
         )
     return normalized
 

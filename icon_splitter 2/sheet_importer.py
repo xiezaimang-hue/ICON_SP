@@ -19,6 +19,7 @@ DESCRIPTION_COLUMNS = {
     "描述", "视觉描述", "图标描述", "内容描述",
 }
 CHINESE_COLUMNS = {"中文", "中文名", "中文名称", "chinese", "name_zh", "zh_name"}
+ENGLISH_COLUMNS = {"英文", "英文名", "英文名称", "english", "name_en", "en_name", "prompt_name"}
 
 
 def normalize_text(value, *, newline_replacement=" ") -> str:
@@ -79,6 +80,7 @@ def parse_spec_records(
     order_col = pick_column(headers, ORDER_COLUMNS)
     description_col = pick_column(headers, DESCRIPTION_COLUMNS)
     chinese_col = pick_column(headers, CHINESE_COLUMNS)
+    english_col = pick_column(headers, ENGLISH_COLUMNS)
     if not poi_col:
         raise ValueError("表格中找不到 POI/景点/地标 列")
     if not city_col and not city_hint:
@@ -105,9 +107,13 @@ def parse_spec_records(
                     pass
         description = normalize_text(row.get(description_col)) if description_col else ""
         name_zh = normalize_text(row.get(chinese_col)) if chinese_col else ""
+        prompt_name = normalize_text(row.get(english_col)) if english_col else ""
+        if not name_zh and re.search(r"[\u3400-\u9fff]", poi):
+            name_zh = poi
         grouped[current_city].append((order, {
             "name": poi,
             "name_zh": name_zh,
+            "prompt_name": prompt_name,
             "description": description,
         }))
     for city in grouped:

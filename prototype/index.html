@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POI Icon Studio Prototype</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">PI</span>
+        <div>
+          <strong>POI Icon Studio</strong>
+          <small>Prototype</small>
+        </div>
+      </div>
+
+      <button class="side-action active" data-view="overview">
+        <span>概览</span>
+        <strong id="nav-progress">0%</strong>
+      </button>
+      <button class="side-action" data-view="prompts">Prompt</button>
+      <button class="side-action" data-view="upload">候选大图</button>
+      <button class="side-action" data-view="process">切图处理</button>
+      <button class="side-action" data-view="review">人工评估</button>
+      <button class="side-action" data-view="export">交付导出</button>
+
+      <div class="city-card">
+        <span>当前城市</span>
+        <strong id="side-city">Seoul</strong>
+        <small id="side-status">等待导入</small>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Clickable Web Prototype</p>
+          <h1 id="page-title">项目概览</h1>
+        </div>
+        <div class="top-actions">
+          <button class="ghost-button" id="reset-demo">重置演示</button>
+          <button class="primary-button" id="next-step">开始导入</button>
+        </div>
+      </header>
+
+      <section class="view active" id="overview">
+        <div class="hero-panel">
+          <div>
+            <p class="eyebrow">Demo Workspace</p>
+            <h2 id="hero-title">从一张 POI 表开始生成图标交付包</h2>
+            <p id="hero-copy">内置演示数据会贯穿导入、Prompt、候选图、切图、评估和导出。</p>
+          </div>
+          <div class="hero-visual" aria-hidden="true">
+            <div class="mini-grid" id="hero-grid"></div>
+          </div>
+        </div>
+
+        <div class="metrics">
+          <article>
+            <span>城市</span>
+            <strong id="metric-cities">0</strong>
+          </article>
+          <article>
+            <span>POI</span>
+            <strong id="metric-pois">0</strong>
+          </article>
+          <article>
+            <span>候选图</span>
+            <strong id="metric-candidates">0</strong>
+          </article>
+          <article>
+            <span>已选择</span>
+            <strong id="metric-selected">0/0</strong>
+          </article>
+        </div>
+
+        <div class="stage-board" id="stage-board"></div>
+      </section>
+
+      <section class="view" id="prompts">
+        <div class="split-layout">
+          <aside class="panel page-selector">
+            <div class="panel-title">
+              <span>城市项目</span>
+              <strong id="prompt-city">Seoul</strong>
+            </div>
+            <div id="page-list"></div>
+          </aside>
+          <article class="panel prompt-editor">
+            <div class="panel-title prompt-title">
+              <div>
+                <span id="prompt-page-title">PAGE 1</span>
+                <strong id="prompt-meta">8 POI</strong>
+              </div>
+              <button class="secondary-button" id="copy-prompt">复制 Prompt</button>
+            </div>
+            <textarea id="prompt-text" readonly></textarea>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="upload">
+        <div class="toolbar-panel">
+          <div>
+            <p class="eyebrow">Candidate Sheets</p>
+            <h2>PAGE 候选大图</h2>
+          </div>
+          <button class="primary-button" id="upload-candidate">上传候选</button>
+        </div>
+        <div class="candidate-grid" id="candidate-grid"></div>
+      </section>
+
+      <section class="view" id="process">
+        <div class="process-layout">
+          <article class="panel">
+            <div class="panel-title">
+              <span>处理选项</span>
+              <strong id="process-readiness">等待候选图</strong>
+            </div>
+            <label class="toggle-row">
+              <input type="checkbox" id="ocr-toggle" checked>
+              <span>OCR 去文字</span>
+            </label>
+            <label class="toggle-row muted-toggle">
+              <input type="checkbox" id="ai-toggle">
+              <span>AI 整图初审</span>
+              <small>默认关闭</small>
+            </label>
+            <button class="primary-button full-width" id="run-process">切图当前城市</button>
+          </article>
+          <article class="panel log-panel">
+            <div class="panel-title">
+              <span>实时日志</span>
+              <strong id="log-status">Idle</strong>
+            </div>
+            <pre id="process-log">等待候选大图上传...</pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="review">
+        <div class="review-layout">
+          <article class="panel review-table-panel">
+            <div class="panel-title">
+              <span>人工评估</span>
+              <strong id="review-count">0 items</strong>
+            </div>
+            <div class="filter-row">
+              <button class="filter active" data-filter="all">全部</button>
+              <button class="filter" data-filter="pending">待选择</button>
+              <button class="filter" data-filter="accepted">已选择</button>
+              <button class="filter" data-filter="redo">需重做</button>
+            </div>
+            <div class="review-list" id="review-list"></div>
+          </article>
+          <aside class="panel detail-panel" id="review-detail"></aside>
+        </div>
+      </section>
+
+      <section class="view" id="export">
+        <div class="export-panel">
+          <div class="export-icon" aria-hidden="true">PNG</div>
+          <h2 id="export-title">等待全部 POI 选择最终候选</h2>
+          <p id="export-copy">完成评估后即可生成中英双语命名的 100px 图标包。</p>
+          <button class="primary-button" id="export-final">导出最终图片</button>
+          <div class="export-list" id="export-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="import-dialog">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head">
+        <strong>导入 POI 总表</strong>
+        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
+      </div>
+      <div class="fake-upload">
+        <span>CSV</span>
+        <div>
+          <strong>seoul_poi_demo.csv</strong>
+          <small>1 城市 · 8 POI · 8 条视觉描述</small>
+        </div>
+      </div>
+      <button class="primary-button full-width" id="confirm-import" value="default">导入并生成 Prompt</button>
+    </form>
+  </dialog>
+
+  <dialog id="upload-dialog">
+    <form method="dialog" class="modal-card">
+      <div class="modal-head">
+        <strong>上传 PAGE 1 候选</strong>
+        <button class="icon-button" value="cancel" aria-label="关闭">×</button>
+      </div>
+      <div class="fake-upload">
+        <span>IMG</span>
+        <div>
+          <strong>page_01_candidates.zip</strong>
+          <small>将加入 3 组演示候选大图</small>
+        </div>
+      </div>
+      <button class="primary-button full-width" id="confirm-upload" value="default">加入候选库</button>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

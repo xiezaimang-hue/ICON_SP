@@ -2,9 +2,9 @@
 
 > 本文面向后续接手本项目的 Agent/工程师。它是当前功能、数据契约、默认行为和已知边界的汇总。修改代码前应先阅读本文，再阅读对应模块和测试。
 
-表格中的可选 `中文 / 中文名 / name_zh` 列会作为 `name_zh` 贯通到 `pois.json`、`project.json` 和人工评估界面。每个PAGE的复制按钮位于该PAGE标题栏，按钮文字包含PAGE编号。
+表格中的可选 `中文 / 中文名 / name_zh` 列会作为 `name_zh` 贯通到 `pois.json`、`project.json` 和人工评估界面。表格中的可选 `英文 / 英文名 / name_en / prompt_name` 列会作为英文生图名；如果没有英文列，系统会用本地词典为中文POI生成 `prompt_name`。每个PAGE的复制按钮位于该PAGE标题栏，按钮文字包含PAGE编号。
 
-每个PAGE有两套本地确定性Prompt：原版位于 `prompts/page_XX.txt`，`Prompt_无底座` 位于 `prompts/Prompt_无底座/page_XX.txt`。项目接口以 `prompt_variants.original/no_base` 返回文本；旧项目在读取时只补生成第二版，不改写原版。
+每个PAGE有三套本地确定性Prompt：原版位于 `prompts/page_XX.txt`，`Prompt_图标化` 位于 `prompts/Prompt_图标化/page_XX.txt`，`Prompt_本体强化` 位于 `prompts/Prompt_本体强化/page_XX.txt`。项目接口以 `prompt_variants.original/iconic/identity` 返回文本；Prompt内容优先使用英文 `prompt_name`，旧项目在读取时会补齐该字段并刷新系统生成的Prompt，同时移除旧 `Prompt_无底座` 字段。
 
 ## 1. 产品目标
 
@@ -21,6 +21,10 @@
 7. 可选使用当前已登录的Codex CLI做整图AI初审。
 8. 在图形工作台中评估全部成品，记录通过、驳回、重做或待定。
 9. 在单个评估详情中可一键打开当前城市与POI的 Bing 真实图片搜索，辅助人工比对。
+10. 每个PAGE可保存最多10组候选大图；统一切图后按POI人工选择最终候选，全部选择完成才允许导出中英双语命名的100px交付PNG。
+11. 人工评估可随时导出城市POI审核总览PNG，供其他职能查看全部候选、选择状态、AI结论和备注；总览图宽度为1600px，单张最高约2400px，超出时自动拆成 `part01/part02...` 多张图，并统一放入 `outputs/<城市>/review_boards/<城市>_POI审核总览_<时间戳>/` 文件夹，便于在其他软件中编辑和转发。
+12. 补图后再次切图只处理未切过或失败的候选组；已 `processed` 的候选组不会二次切图，已有人工选择和备注保持不变，新切候选追加到同一POI的候选列表后面。
+13. 人工评估详情支持“单独导出”：进入模式后可多选当前POI的候选图，确认导出时会调用系统原生选择文件夹弹窗；系统会在所选目录下新建带城市与时间戳的子文件夹，不改变最终选择、不删除原候选、不覆盖 `final/`。
 
 ## 2. 代码与职责
 
@@ -48,10 +52,15 @@
   - GUI上传表格的解析器，支持XLSX/CSV、整表多城市、列名检测、视觉描述和顺序排序。
 - `prompt_generator.py`
   - 按每16个POI生成可直接复制到外部生图软件的PAGE Prompt。
+  - Prompt中的POI标题和顺序使用英文 `prompt_name`；原始中文POI继续留在 `name/name_zh` 供人工评估和导出。
   - 没有视觉描述时使用本地通用描述，不调用Codex。
+  - `Prompt_图标化` 基于原版规则，强调高质量低细节、2-4个大体块、单一强轮廓和50px移动端可读性。
+  - `Prompt_本体强化` 基于图标化规则，进一步强调POI本体的标志性颜色和主轮廓，但用低细节大块面表达建筑体量，避免生成泛化地标或过度精细模型。
 - `web_app.py`
   - 当前macOS图形工作台和localhost HTTP API。
   - 负责城市扫描、上传、后台切图、日志、全部成品人工评估和文件预览。
+- `review_board.py`
+  - 只读汇总候选与选择数据，生成4列、1920px宽的城市POI人工审核总览长图；单张候选损坏时使用占位图。
 - `desktop_app.py`
   - 兼容启动入口，当前仅调用 `web_app.main()`。
 - `run.command` / `run.bat`
@@ -156,7 +165,7 @@ POI列候选：
 - 用户只上传一次POI总表，不需要同时上传图片或逐个填写城市。
 - 应用读取表格中的全部城市并为每个城市创建项目目录。
 - 每16个POI生成一个PAGE Prompt；尾页不补假POI。
-- Prompt立即写入 `prompts/page_XX.txt`，生成过程不消耗Plus额度。
+- Prompt立即写入 `prompts/page_XX.txt` 及各变体目录，生成过程不消耗Plus额度。
 - 可选描述列：`description / visual description / icon description / 描述 / 视觉描述 / 图标描述 / 内容描述`。
 - XLSX会在前30行中查找同时含城市和POI的表头，并遍历工作表直到找到有效数据。
 - 合并单元格导致的空城市会沿用上一行城市。
@@ -280,6 +289,13 @@ other
 - 重新导入或POI变化时，仅当key和POI名称都一致才复用旧人工决定。
 - 人工驳回/重做不会自动调用图像模型重新生图。
 
+多候选人工挑选：
+
+- 当前主流程按POI展示最多10组候选切片，点击候选图可设为最终，再次点击同一候选会取消选择。
+- 详情区“删除”进入候选切片删除模式；用户可多选当前POI的候选图，红色描边和叉表示将删除。
+- 确认删除会从 `outputs/<城市>/candidates/...` 中删除对应PNG，并从 `candidate_manifest.json` 移除对应候选条目。
+- 若被删除候选正是该POI的最终选择，`selections.json` 中该POI会恢复为 `pending`；同组其它POI候选和原始大图不会被删除。
+
 ## 7. 输出契约
 
 ```text
@@ -395,6 +411,7 @@ GUI使用 `scope: "all_cropped_icons"`，每个输出图标一条记录，包含
 | POST | `/api/import` | 旧版单城市表格+图片一次性导入兼容接口 |
 | POST | `/api/run` | 启动后台切图/审核 |
 | POST | `/api/decision` | 保存人工评估 |
+| POST | `/api/export-review-board` | 导出当前城市POI审核总览PNG，不修改审核数据 |
 | POST | `/api/open-output` | Finder打开输出目录 |
 
 服务状态和切图任务由 `StudioState` 管理。同一时间只允许一个处理任务；任务在线程中执行，避免阻塞HTTP界面。
